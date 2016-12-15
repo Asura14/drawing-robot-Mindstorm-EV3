@@ -24,6 +24,28 @@ public class robot {
             pilot.rotate(90);
         }
 	}
+	
+	//Draws line
+	public static void line(int distance) {
+		Brick brick=BrickFinder.getDefault();
+		RegulatedMotor leftMotor = new EV3LargeRegulatedMotor(brick.getPort("B"));
+		RegulatedMotor rightMotor = new EV3LargeRegulatedMotor(brick.getPort("C"));
+		DifferentialPilot pilot = new DifferentialPilot(6.24, 11.55, leftMotor, rightMotor);
+		pilot.travel(distance);
+	}
+	
+	//Draws circle
+	public static void circle(String[] args) {
+		Brick brick=BrickFinder.getDefault();
+	    RegulatedMotor leftMotor = new EV3LargeRegulatedMotor(brick.getPort("B"));
+	    RegulatedMotor rightMotor = new EV3LargeRegulatedMotor(brick.getPort("C"));
+	    DifferentialPilot pilot = new DifferentialPilot(6.24, 11.55, leftMotor, rightMotor);
+	    
+	    for(int i=0; i<1000; i++) {
+	    	pilot.travel(40);
+	        pilot.rotate(360/1000);
+	    }
+	}
  
 
 }
