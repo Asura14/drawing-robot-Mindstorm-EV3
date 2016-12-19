@@ -17,7 +17,12 @@ public class robot {
         
         RegulatedMotor leftMotor = new EV3LargeRegulatedMotor(brick.getPort("B"));
         RegulatedMotor rightMotor = new EV3LargeRegulatedMotor(brick.getPort("C"));
-        DifferentialPilot pilot = new DifferentialPilot(6.24, 11.55, leftMotor, rightMotor);
+        //         DifferentialPilot pilot = new DifferentialPilot(5.6, 12.1, leftMotor, rightMotor);
+        //        DifferentialPilot pilot = new DifferentialPilot(5.6, 13, leftMotor, rightMotor);
+    	//        DifferentialPilot pilot = new DifferentialPilot(5.6, 20, leftMotor, rightMotor);
+        // DifferentialPilot pilot = new DifferentialPilot(5.6, 15, leftMotor, rightMotor);
+        
+        DifferentialPilot pilot = new DifferentialPilot(5.6, 18, leftMotor, rightMotor);
         
         for(int i=0; i<4; i++) {
             pilot.travel(40);
