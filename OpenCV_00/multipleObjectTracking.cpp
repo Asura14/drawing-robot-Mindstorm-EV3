@@ -21,6 +21,13 @@ int S_MAX = 256;
 int V_MIN = 0;
 int V_MAX = 256;
 
+int H_MIN_DEFAULT = 0;
+int H_MAX_DEFAULT = 256;
+int S_MIN_DEFAULT = 49;
+int S_MAX_DEFAULT = 217;
+int V_MIN_DEFAULT = 41;
+int V_MAX_DEFAULT = 256;
+
 //default capture width and height
 const int FRAME_WIDTH = 640;
 const int FRAME_HEIGHT = 480;
@@ -77,12 +84,21 @@ void createTrackbars(){
 	//the max value the trackbar can move (eg. H_HIGH),
 	//and the function that is called whenever the trackbar is moved(eg. on_trackbar)
 	//                                  ---->    ---->     ---->
-	createTrackbar( "H_MIN", trackbarWindowName, &H_MIN, H_MAX, on_trackbar );
-	createTrackbar( "H_MAX", trackbarWindowName, &H_MAX, H_MAX, on_trackbar );
-	createTrackbar( "S_MIN", trackbarWindowName, &S_MIN, S_MAX, on_trackbar );
-	createTrackbar( "S_MAX", trackbarWindowName, &S_MAX, S_MAX, on_trackbar );
-	createTrackbar( "V_MIN", trackbarWindowName, &V_MIN, V_MAX, on_trackbar );
-	createTrackbar( "V_MAX", trackbarWindowName, &V_MAX, V_MAX, on_trackbar );
+
+	createTrackbar("H_MIN", trackbarWindowName, &H_MIN, H_MAX, on_trackbar);
+	createTrackbar("H_MAX", trackbarWindowName, &H_MAX, H_MAX, on_trackbar);
+	createTrackbar("S_MIN", trackbarWindowName, &S_MIN, S_MAX, on_trackbar);
+	createTrackbar("S_MAX", trackbarWindowName, &S_MAX, S_MAX, on_trackbar);
+	createTrackbar("V_MIN", trackbarWindowName, &V_MIN, V_MAX, on_trackbar);
+	createTrackbar("V_MAX", trackbarWindowName, &V_MAX, V_MAX, on_trackbar);
+	/*
+	createTrackbar( "H_MIN", trackbarWindowName, &H_MIN_DEFAULT, H_MAX, on_trackbar );
+	createTrackbar( "H_MAX", trackbarWindowName, &H_MAX_DEFAULT, H_MAX, on_trackbar );
+	createTrackbar( "S_MIN", trackbarWindowName, &S_MIN_DEFAULT, S_MAX, on_trackbar );
+	createTrackbar( "S_MAX", trackbarWindowName, &S_MAX_DEFAULT, S_MAX, on_trackbar );
+	createTrackbar( "V_MIN", trackbarWindowName, &V_MIN_DEFAULT, V_MAX, on_trackbar );
+	createTrackbar( "V_MAX", trackbarWindowName, &V_MAX_DEFAULT, V_MAX, on_trackbar );
+	*/
 }
 
 void drawObject(vector<Object> theObjects,Mat &frame, Mat &temp, vector< vector<Point> > contours, vector<Vec4i> hierarchy){
@@ -251,7 +267,8 @@ void selectCorners(int event, int x, int y, int flags, void* param)
 {
 	if (event == cv::EVENT_LBUTTONDOWN)
 	{
-		circle(cameraFeed, cv::Point(x, y), 3, RED, 5, CV_AA);
+		// draw circle on clicked spots
+		// circle(cameraFeed, cv::Point(x, y), 3, RED, 5, CV_AA);
 		cv::imshow("Original Image", cameraFeed);
 		if (corners.size() < 4)
 		{
@@ -298,7 +315,10 @@ int main(int argc, char* argv[])
 		//store image to matrix
 		capture.read(cameraFeed);
 
-		src = cameraFeed;
+		if (homographyCalculated == true)
+			src = roi;
+		else
+			src = cameraFeed;
 
   		if( !src.data )
   		{ return -1; }
@@ -310,6 +330,8 @@ int main(int argc, char* argv[])
 		if (homographyMode == true)
 		{
 			if (!homographyCalculated) { // se ainda não foi definida a homografia, calcular com base nos 4 pontos do rato
+				std::cout << "Click on four corners -- top left first and bottom left last -- and then hit any Key" << std::endl;
+
 				imshow(windowName, cameraFeed);
 
 				// acquire points for homography
@@ -342,10 +364,40 @@ int main(int argc, char* argv[])
 
 				// Show REGION OF INTEREST
 				cv::imshow("REGION OF INTEREST", roi);
+
+				homographyCalculated = true;
 			}
 			else // se a homografia já foi definida
 			{
+				imshow(windowName, cameraFeed);
 
+				// Warp source image to destination
+				warpPerspective(cameraFeed, warpedImage, h, sizeHomo);
+				warpedImage.copyTo(roi);
+
+				// -------------- detecção de objetos (INI) --------------
+				//if in calibration mode, we track objects based on the HSV slider values.
+				cvtColor(roi, HSV, COLOR_BGR2HSV);
+				inRange(HSV, Scalar(H_MIN, S_MIN, V_MIN), Scalar(H_MAX, S_MAX, V_MAX), threshold);
+				morphOps(threshold);
+				imshow(windowName2, threshold);
+
+				//the folowing for canny edge detec
+				/// Create a matrix of the same type and size as src (for dst)
+				dst.create(src.size(), src.type());
+				/// Convert the image to grayscale
+				cvtColor(src, src_gray, CV_BGR2GRAY);
+				/// Create a window
+				namedWindow(window_name, CV_WINDOW_AUTOSIZE);
+				/// Create a Trackbar for user to enter threshold
+				createTrackbar("Min Threshold:", window_name, &lowThreshold, max_lowThreshold);
+				/// Show the image
+				trackFilteredObject(threshold, HSV, roi);
+
+				// -------------- detecção de objetos (FIM) --------------
+
+				// Show REGION OF INTEREST
+				cv::imshow("REGION OF INTEREST", roi);
 			}
 
 		} else
