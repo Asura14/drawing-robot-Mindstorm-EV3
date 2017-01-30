@@ -228,6 +228,18 @@ std::vector<cv::Point2f> corners;
 
 cv::Mat roi; // Region of Interest for Homography
 
+float sizeW = 0; // RoI width
+float sizeH = 0; // RoI width
+
+cv::Size sizeHomo(0, 0);
+
+cv::Mat warpedImage;
+
+// Create a vector of destination points
+std::vector<cv::Point2f> cornersDst;
+
+cv::Mat h;
+
 double distance(cv::Point2f p0, cv::Point2f p1)
 {
 	double dX0 = p0.x, dY0 = p0.y, dX1 = p1.x, dY1 = p1.y;
@@ -306,30 +318,34 @@ int main(int argc, char* argv[])
 				cv::waitKey(0);
 
 				//Set the size for the region of interest
-				float sizeW = distance(corners[0], corners[1]);
-				float sizeH = distance(corners[1], corners[2]);
+				sizeW = distance(corners[0], corners[1]);
+				sizeH = distance(corners[1], corners[2]);
 
-				cv::Size size(sizeW, sizeH);
-				cv::Mat warpedImage = cv::Mat::zeros(size, CV_8UC3);
 
-				// Create a vector of destination points
-				std::vector<cv::Point2f> cornersDst;
+				sizeHomo.width = sizeW;
+				sizeHomo.height = sizeH;
+
+				warpedImage = cv::Mat::zeros(sizeHomo, CV_8UC3);
 
 				cornersDst.push_back(cv::Point2f(0, 0));
-				cornersDst.push_back(cv::Point2f(size.width - 1, 0));
-				cornersDst.push_back(cv::Point2f(size.width - 1, size.height - 1));
-				cornersDst.push_back(cv::Point2f(0, size.height - 1));
+				cornersDst.push_back(cv::Point2f(sizeHomo.width - 1, 0));
+				cornersDst.push_back(cv::Point2f(sizeHomo.width - 1, sizeHomo.height - 1));
+				cornersDst.push_back(cv::Point2f(0, sizeHomo.height - 1));
 
 				// Calculate the homography
-				cv::Mat h = cv::findHomography(corners, cornersDst);
+				h = cv::findHomography(corners, cornersDst);
 
 				// Warp source image to destination
-				warpPerspective(cameraFeed, warpedImage, h, size);
+				warpPerspective(cameraFeed, warpedImage, h, sizeHomo);
 
 				warpedImage.copyTo(roi);
 
 				// Show REGION OF INTEREST
 				cv::imshow("REGION OF INTEREST", roi);
+			}
+			else // se a homografia já foi definida
+			{
+
 			}
 
 		} else
