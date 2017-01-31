@@ -275,7 +275,7 @@ void trackFilteredObject(Mat threshold,Mat HSV, Mat &cameraFeed)
 				// angle1 -= 90;
 				// angle2 -= 90;
 
-				// cout << "angle 1 = " << angle1 << endl;
+				cout << "angle 1 = " << angle1 << endl;
 				// cout << "angle 2 = " << angle1 << endl;
 
 				if (!courseIsCompleted) {
@@ -286,7 +286,7 @@ void trackFilteredObject(Mat threshold,Mat HSV, Mat &cameraFeed)
 					// convert to angle with horizontal
 					// nextAngle -= 90;
 
-					// cout << "nextAngle = " << nextAngle << endl;
+					cout << "nextAngle = " << nextAngle << endl;
 					float distanceToCheckpoint = distance(robotCenter, nextCheckpoint);
 					float angleDifference = nextAngle - angle1;
 					cout << "angle difference = " << angleDifference << endl;
@@ -310,8 +310,11 @@ void trackFilteredObject(Mat threshold,Mat HSV, Mat &cameraFeed)
 						cout << " --- Hit checkpoint i = " << nextCheckpointIndex << endl;
 						if (nextCheckpointIndex == course.size() - 1)
 							courseIsCompleted = true; // course is complete once all the course's checkpoints are ran
-						nextCheckpointIndex++;
-						nextCheckpoint = course[nextCheckpointIndex];
+						else
+						{
+							nextCheckpointIndex++;	
+							nextCheckpoint = course[nextCheckpointIndex];
+						}
 					}
 				}
 			}
