@@ -29,8 +29,12 @@ int V_MIN_DEFAULT = 41;
 int V_MAX_DEFAULT = 256;
 
 //default capture width and height
-const int FRAME_WIDTH = 640;
-const int FRAME_HEIGHT = 480;
+//const int FRAME_WIDTH = 640;
+//const int FRAME_HEIGHT = 480;
+
+// high resolution:
+const int FRAME_WIDTH = 1280;
+const int FRAME_HEIGHT = 960;
 
 //max number of objects to be detected in frame
 const int MAX_NUM_OBJECTS=50;
@@ -93,6 +97,7 @@ void createTrackbars(){
 	createTrackbar("V_MIN", trackbarWindowName, &V_MIN, V_MAX, on_trackbar);
 	createTrackbar("V_MAX", trackbarWindowName, &V_MAX, V_MAX, on_trackbar);
 	/*
+	// tentativa de atribuir valores por defeito nas trackbars:
 	createTrackbar( "H_MIN", trackbarWindowName, &H_MIN_DEFAULT, H_MAX, on_trackbar );
 	createTrackbar( "H_MAX", trackbarWindowName, &H_MAX_DEFAULT, H_MAX, on_trackbar );
 	createTrackbar( "S_MIN", trackbarWindowName, &S_MIN_DEFAULT, S_MAX, on_trackbar );
@@ -187,61 +192,15 @@ void trackFilteredObject(Mat threshold,Mat HSV, Mat &cameraFeed)
 	}
 }
 
-void trackFilteredObject(Object theObject,Mat threshold,Mat HSV, Mat &cameraFeed){
-
-	vector <Object> objects;
-	Mat temp;
-	threshold.copyTo(temp);
-	//these two vectors needed for output of findContours
-	vector< vector<Point> > contours;
-	vector<Vec4i> hierarchy;
-	//find contours of filtered image using openCV findContours function
-	findContours(temp,contours,hierarchy,CV_RETR_CCOMP,CV_CHAIN_APPROX_SIMPLE );
-	//use moments method to find our filtered object
-	double refArea = 0;
-	bool objectFound = false;
-	if (hierarchy.size() > 0) {
-		int numObjects = hierarchy.size();
-		//if number of objects greater than MAX_NUM_OBJECTS we have a noisy filter
-		if(numObjects<MAX_NUM_OBJECTS){
-			for (int index = 0; index >= 0; index = hierarchy[index][0]) {
-
-				Moments moment = moments((cv::Mat)contours[index]);
-				double area = moment.m00;
-
-		//if the area is less than 20 px by 20px then it is probably just noise
-		//if the area is the same as the 3/2 of the image size, probably just a bad filter
-		//we only want the object with the largest area so we safe a reference area each
-				//iteration and compare it to the area in the next iteration.
-				if(area>MIN_OBJECT_AREA){
-
-					Object object;
-
-					object.setXPos(moment.m10/area);
-					object.setYPos(moment.m01/area);
-					object.setType(theObject.getType());
-					object.setColor(theObject.getColor());
-
-					objects.push_back(object);
-
-					objectFound = true;
-
-				}else objectFound = false;
-			}
-			//let user know you found an object
-			if(objectFound ==true){
-				//draw object location on screen
-				drawObject(objects,cameraFeed,temp,contours,hierarchy);}
-
-		}else putText(cameraFeed,"TOO MUCH NOISE! ADJUST FILTER",Point(0,50),1,2,Scalar(0,0,255),2);
-	}
-}
-
 
 // ---------------------------------------------- CÓDIGO BASEADO EM VCOM (INI) ----------------------------------------------
 const cv::Scalar GREEN = cv::Scalar(0, 255, 0);
 const cv::Scalar RED = cv::Scalar(0, 0, 255);
+const cv::Scalar BLUE = cv::Scalar(255, 0, 0);
+
 std::vector<cv::Point2f> corners;
+std::vector<cv::Point2f> course;
+std::vector<bool> courseCompleted;
 
 cv::Mat roi; // Region of Interest for Homography
 
@@ -269,11 +228,28 @@ void selectCorners(int event, int x, int y, int flags, void* param)
 	if (event == cv::EVENT_LBUTTONDOWN)
 	{
 		// draw circle on clicked spots
-		// circle(cameraFeed, cv::Point(x, y), 3, RED, 5, CV_AA);
+		circle(cameraFeed, cv::Point(x, y), 3, RED, 5, CV_AA);
 		cv::imshow("Original Image", cameraFeed);
 		if (corners.size() < 4)
 		{
 			corners.push_back(cv::Point2f(x, y));
+		}
+	}
+}
+
+//Mouse callback to select drawing course
+void selectCourse(int event, int x, int y, int flags, void* param)
+{
+	if (event == cv::EVENT_LBUTTONDOWN)
+	{
+		cout << "adding course point (x = " << x << ", y = " << y << ")" << endl;
+		// draw circle on clicked spots
+		circle(roi, cv::Point(x, y), 3, BLUE, 5, CV_AA);
+		cv::imshow("REGION OF INTEREST", roi);
+		if (course.size() < 4)
+		{
+			course.push_back(cv::Point2f(x, y));
+			courseCompleted.push_back(false);
 		}
 	}
 }
@@ -289,6 +265,7 @@ int main(int argc, char* argv[])
 
 	bool homographyMode = true;
 	bool homographyCalculated = false;
+	bool courseSet = false;
 
 	//Matrix to store each frame of the webcam feed
 
@@ -331,7 +308,7 @@ int main(int argc, char* argv[])
 		if (homographyMode == true)
 		{
 			if (!homographyCalculated) { // se ainda não foi definida a homografia, calcular com base nos 4 pontos do rato
-				std::cout << "Click on four corners -- top left first and bottom left last -- and then hit any Key" << std::endl;
+				std::cout << "'Original' image window:\nClick on four corners -- top left first and bottom left last -- and then hit any Key" << std::endl;
 
 				imshow(windowName, cameraFeed);
 
@@ -367,10 +344,20 @@ int main(int argc, char* argv[])
 				cv::imshow("REGION OF INTEREST", roi);
 
 				homographyCalculated = true;
+				cv::setMouseCallback("Original Image", NULL, NULL);
 			}
 			else // se a homografia já foi definida
 			{
-				imshow(windowName, cameraFeed);
+				if (!courseSet) { // se o percurso de desenho ainda não foi desenhado
+					std::cout << "\n\n'REGION OF INTEREST' window: \nClick on the points for the robot's course -- and then hit any Key\n\n" << std::endl;
+					cv::imshow("REGION OF INTEREST", roi);
+
+					// Set the callback function for any mouse event
+					cv::setMouseCallback("REGION OF INTEREST", selectCourse, 0);
+					cv::waitKey(0);
+
+					courseSet = true;
+				}
 
 				// Warp source image to destination
 				warpPerspective(cameraFeed, warpedImage, h, sizeHomo);
@@ -381,7 +368,7 @@ int main(int argc, char* argv[])
 				cvtColor(roi, HSV, COLOR_BGR2HSV);
 				inRange(HSV, Scalar(H_MIN, S_MIN, V_MIN), Scalar(H_MAX, S_MAX, V_MAX), threshold);
 				morphOps(threshold);
-				imshow(windowName2, threshold);
+				imshow(windowName2, threshold); // thresholded image
 
 				//the folowing for canny edge detec
 				/// Create a matrix of the same type and size as src (for dst)
@@ -397,60 +384,30 @@ int main(int argc, char* argv[])
 
 				// -------------- detecção de objetos (FIM) --------------
 
+				// desenha os 4 cantos do percurso de desenho
+				// (azul ainda não atingidos; verde já atingidos)
+				if (course.size() != courseCompleted.size())
+				{
+					cerr << "error, different sized vectors" << endl;
+					return -1;
+				}
+				for (int i = 0; i < course.size(); i++)
+					if (courseCompleted[i] == true)
+						circle(roi, cv::Point(course[i].x, course[i].y), 3, GREEN, 5, CV_AA);
+					else
+						circle(roi, cv::Point(course[i].x, course[i].y), 3, BLUE, 5, CV_AA);
+
+				// check distance between robot and next course spot
+
+				// Show original image
+				imshow(windowName, cameraFeed); 
 				// Show REGION OF INTEREST
 				cv::imshow("REGION OF INTEREST", roi);
 			}
 
-		} else
-		if(calibrationMode == true){
+		} 
 
-			//need to find the appropriate color range values
 
-			//if in calibration mode, we track objects based on the HSV slider values.
-			cvtColor(cameraFeed,HSV,COLOR_BGR2HSV);
-			inRange(HSV,Scalar(H_MIN,S_MIN,V_MIN),Scalar(H_MAX,S_MAX,V_MAX),threshold);
-			morphOps(threshold);
-			imshow(windowName2,threshold);
-
-			//the folowing for canny edge detec
-			/// Create a matrix of the same type and size as src (for dst)
-	  		dst.create( src.size(), src.type() );
-	  		/// Convert the image to grayscale
-	  		cvtColor( src, src_gray, CV_BGR2GRAY );
-	  		/// Create a window
-	  		namedWindow( window_name, CV_WINDOW_AUTOSIZE );
-	  		/// Create a Trackbar for user to enter threshold
-	  		createTrackbar( "Min Threshold:", window_name, &lowThreshold, max_lowThreshold);
-	  		/// Show the image
-			trackFilteredObject(threshold,HSV,cameraFeed);
-		}
-		else{
-			//create some temp fruit objects so that
-			//we can use their member functions/information
-			Object blue("blue"), yellow("yellow"), red("red"), green("green");
-
-			//first find blue objects
-			cvtColor(cameraFeed,HSV,COLOR_BGR2HSV);
-			inRange(HSV,blue.getHSVmin(),blue.getHSVmax(),threshold);
-			morphOps(threshold);
-			trackFilteredObject(blue,threshold,HSV,cameraFeed);
-			//then yellows
-			cvtColor(cameraFeed,HSV,COLOR_BGR2HSV);
-			inRange(HSV,yellow.getHSVmin(),yellow.getHSVmax(),threshold);
-			morphOps(threshold);
-			trackFilteredObject(yellow,threshold,HSV,cameraFeed);
-			//then reds
-			cvtColor(cameraFeed,HSV,COLOR_BGR2HSV);
-			inRange(HSV,red.getHSVmin(),red.getHSVmax(),threshold);
-			morphOps(threshold);
-			trackFilteredObject(red,threshold,HSV,cameraFeed);
-			//then greens
-			cvtColor(cameraFeed,HSV,COLOR_BGR2HSV);
-			inRange(HSV,green.getHSVmin(),green.getHSVmax(),threshold);
-			morphOps(threshold);
-			trackFilteredObject(green,threshold,HSV,cameraFeed);
-
-		}
 		//show frames
 		//imshow(windowName2,threshold);
 
