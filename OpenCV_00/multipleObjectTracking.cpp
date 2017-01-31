@@ -85,6 +85,7 @@ void createTrackbars(){
 	//and the function that is called whenever the trackbar is moved(eg. on_trackbar)
 	//                                  ---->    ---->     ---->
 
+	/**/
 	createTrackbar("H_MIN", trackbarWindowName, &H_MIN, H_MAX, on_trackbar);
 	createTrackbar("H_MAX", trackbarWindowName, &H_MAX, H_MAX, on_trackbar);
 	createTrackbar("S_MIN", trackbarWindowName, &S_MIN, S_MAX, on_trackbar);
