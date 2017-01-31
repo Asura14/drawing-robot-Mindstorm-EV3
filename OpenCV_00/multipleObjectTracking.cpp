@@ -10,7 +10,19 @@
 
 #include "Object.h"
 
+#define PI 3.14159265
+
 Mat cameraFeed;
+bool currentlyTrackingRobot = false;
+bool courseIsCompleted = false;
+cv::Point2f robotPosition1;
+cv::Point2f robotPosition2;
+cv::Point2f robotCenter;
+cv::Point2f nextCheckpoint;
+
+int nextCheckpointIndex = 0;
+const float ANGLE_DIFFERENCE_TOLERANCE = 5.0f;
+const float XY_DIFFERENCE_TOLERANCE = 30.0f;
 
 //initial min and max HSV filter values.
 //these will be changed using trackbars
@@ -50,7 +62,7 @@ const string windowName2 = "Thresholded Image";
 const string windowName3 = "After Morphological Operations";
 const string trackbarWindowName = "Trackbars";
 
-//The following for canny edge detec
+//The following for canny edge detection
 Mat dst, detected_edges;
 Mat src, src_gray;
 int edgeThresh = 1;
@@ -60,139 +72,6 @@ int ratio = 3;
 int kernel_size = 3;
 const char* window_name = "Edge Map";
 
-void on_trackbar( int, void* )
-{//This function gets called whenever a
-	// trackbar position is changed
-
-}
-
-string intToString(int number){
-	std::stringstream ss;
-	ss << number;
-	return ss.str();
-}
-
-void createTrackbars(){
-	//create window for trackbars
-	namedWindow(trackbarWindowName,0);
-	//create memory to store trackbar name on window
-	char TrackbarName[50];
-	sprintf_s( TrackbarName, "H_MIN", H_MIN);
-	sprintf_s( TrackbarName, "H_MAX", H_MAX);
-	sprintf_s( TrackbarName, "S_MIN", S_MIN);
-	sprintf_s( TrackbarName, "S_MAX", S_MAX);
-	sprintf_s( TrackbarName, "V_MIN", V_MIN);
-	sprintf_s( TrackbarName, "V_MAX", V_MAX);
-	//create trackbars and insert them into window
-	//3 parameters are: the address of the variable that is changing when the trackbar is moved(eg.H_LOW),
-	//the max value the trackbar can move (eg. H_HIGH),
-	//and the function that is called whenever the trackbar is moved(eg. on_trackbar)
-	//                                  ---->    ---->     ---->
-
-	/**/
-	createTrackbar("H_MIN", trackbarWindowName, &H_MIN, H_MAX, on_trackbar);
-	createTrackbar("H_MAX", trackbarWindowName, &H_MAX, H_MAX, on_trackbar);
-	createTrackbar("S_MIN", trackbarWindowName, &S_MIN, S_MAX, on_trackbar);
-	createTrackbar("S_MAX", trackbarWindowName, &S_MAX, S_MAX, on_trackbar);
-	createTrackbar("V_MIN", trackbarWindowName, &V_MIN, V_MAX, on_trackbar);
-	createTrackbar("V_MAX", trackbarWindowName, &V_MAX, V_MAX, on_trackbar);
-	/*
-	// tentativa de atribuir valores por defeito nas trackbars:
-	createTrackbar( "H_MIN", trackbarWindowName, &H_MIN_DEFAULT, H_MAX, on_trackbar );
-	createTrackbar( "H_MAX", trackbarWindowName, &H_MAX_DEFAULT, H_MAX, on_trackbar );
-	createTrackbar( "S_MIN", trackbarWindowName, &S_MIN_DEFAULT, S_MAX, on_trackbar );
-	createTrackbar( "S_MAX", trackbarWindowName, &S_MAX_DEFAULT, S_MAX, on_trackbar );
-	createTrackbar( "V_MIN", trackbarWindowName, &V_MIN_DEFAULT, V_MAX, on_trackbar );
-	createTrackbar( "V_MAX", trackbarWindowName, &V_MAX_DEFAULT, V_MAX, on_trackbar );
-	*/
-}
-
-void drawObject(vector<Object> theObjects,Mat &frame, Mat &temp, vector< vector<Point> > contours, vector<Vec4i> hierarchy){
-
-	for(int i =0; i<theObjects.size(); i++){
-	cv::drawContours(frame,contours,i,theObjects.at(i).getColor(),3,8,hierarchy);
-	cv::circle(frame,cv::Point(theObjects.at(i).getXPos(),theObjects.at(i).getYPos()),5,theObjects.at(i).getColor());
-	cv::putText(frame,intToString(theObjects.at(i).getXPos())+ " , " + intToString(theObjects.at(i).getYPos()),cv::Point(theObjects.at(i).getXPos(),theObjects.at(i).getYPos()+20),1,1,theObjects.at(i).getColor());
-	cv::putText(frame,theObjects.at(i).getType(),cv::Point(theObjects.at(i).getXPos(),theObjects.at(i).getYPos()-20),1,2,theObjects.at(i).getColor());
-	}
-}
-
-void drawObject(vector<Object> theObjects,Mat &frame){
-
-	for(int i =0; i<theObjects.size(); i++){
-
-	cv::circle(frame,cv::Point(theObjects.at(i).getXPos(),theObjects.at(i).getYPos()),10,cv::Scalar(0,0,255));
-	cv::putText(frame,intToString(theObjects.at(i).getXPos())+ " , " + intToString(theObjects.at(i).getYPos()),cv::Point(theObjects.at(i).getXPos(),theObjects.at(i).getYPos()+20),1,1,Scalar(0,255,0));
-	cv::putText(frame,theObjects.at(i).getType(),cv::Point(theObjects.at(i).getXPos(),theObjects.at(i).getYPos()-30),1,2,theObjects.at(i).getColor());
-	}
-}
-
-void morphOps(Mat &thresh){
-
-	//create structuring element that will be used to "dilate" and "erode" image.
-	//the element chosen here is a 3px by 3px rectangle
-	Mat erodeElement = getStructuringElement( MORPH_RECT,Size(3,3));
-	//dilate with larger element so make sure object is nicely visible
-	Mat dilateElement = getStructuringElement( MORPH_RECT,Size(8,8));
-
-	erode(thresh,thresh,erodeElement);
-	erode(thresh,thresh,erodeElement);
-
-	dilate(thresh,thresh,dilateElement);
-	dilate(thresh,thresh,dilateElement);
-}
-void trackFilteredObject(Mat threshold,Mat HSV, Mat &cameraFeed)
-{
-	vector <Object> objects;
-	Mat temp;
-	threshold.copyTo(temp);
-	//these two vectors needed for output of findContours
-	vector< vector<Point> > contours;
-	vector<Vec4i> hierarchy;
-	//find contours of filtered image using openCV findContours function
-	findContours(temp,contours,hierarchy,CV_RETR_CCOMP,CV_CHAIN_APPROX_SIMPLE );
-	//use moments method to find our filtered object
-	double refArea = 0;
-	bool objectFound = false;
-	if (hierarchy.size() > 0) {
-		int numObjects = hierarchy.size();
-		//if number of objects greater than MAX_NUM_OBJECTS we have a noisy filter
-		if(numObjects<MAX_NUM_OBJECTS)
-		{
-			for (int index = 0; index >= 0; index = hierarchy[index][0])
-			{
-				Moments moment = moments((cv::Mat)contours[index]);
-				double area = moment.m00;
-				//if the area is less than 20 px by 20px then it is probably just noise
-				//if the area is the same as the 3/2 of the image size, probably just a bad filter
-				//we only want the object with the largest area so we safe a reference area each
-				//iteration and compare it to the area in the next iteration.
-				if(area>MIN_OBJECT_AREA)
-				{
-					Object object;
-
-					object.setXPos(moment.m10/area);
-					object.setYPos(moment.m01/area);
-
-					objects.push_back(object);
-
-					objectFound = true;
-
-				}
-				else objectFound = false;
-			}
-			//let user know you found an object
-			if(objectFound ==true)
-			{
-				//draw object location on screen
-				drawObject(objects,cameraFeed);
-			}
-		}
-		else putText(cameraFeed,"TOO MUCH NOISE! ADJUST FILTER",Point(0,50),1,2,Scalar(0,0,255),2);
-	}
-}
-
-
 // ---------------------------------------------- CÓDIGO BASEADO EM VCOM (INI) ----------------------------------------------
 const cv::Scalar GREEN = cv::Scalar(0, 255, 0);
 const cv::Scalar RED = cv::Scalar(0, 0, 255);
@@ -200,7 +79,7 @@ const cv::Scalar BLUE = cv::Scalar(255, 0, 0);
 
 std::vector<cv::Point2f> corners;
 std::vector<cv::Point2f> course;
-std::vector<bool> courseCompleted;
+std::vector<bool> courseCheckpoints;
 
 cv::Mat roi; // Region of Interest for Homography
 
@@ -249,13 +128,199 @@ void selectCourse(int event, int x, int y, int flags, void* param)
 		if (course.size() < 4)
 		{
 			course.push_back(cv::Point2f(x, y));
-			courseCompleted.push_back(false);
+			courseCheckpoints.push_back(false);
 		}
 	}
 }
 
 // ---------------------------------------------- CÓDIGO BASEADO EM VCOM (FIM) ----------------------------------------------
 
+void on_trackbar( int, void* )
+{//This function gets called whenever a
+	// trackbar position is changed
+
+}
+
+string intToString(int number){
+	std::stringstream ss;
+	ss << number;
+	return ss.str();
+}
+
+void createTrackbars(){
+	//create window for trackbars
+	namedWindow(trackbarWindowName,0);
+	//create memory to store trackbar name on window
+	char TrackbarName[50];
+	sprintf_s( TrackbarName, "H_MIN", H_MIN);
+	sprintf_s( TrackbarName, "H_MAX", H_MAX);
+	sprintf_s( TrackbarName, "S_MIN", S_MIN);
+	sprintf_s( TrackbarName, "S_MAX", S_MAX);
+	sprintf_s( TrackbarName, "V_MIN", V_MIN);
+	sprintf_s( TrackbarName, "V_MAX", V_MAX);
+	//create trackbars and insert them into window
+	//3 parameters are: the address of the variable that is changing when the trackbar is moved(eg.H_LOW),
+	//the max value the trackbar can move (eg. H_HIGH),
+	//and the function that is called whenever the trackbar is moved(eg. on_trackbar)
+	//                                  ---->    ---->     ---->
+
+	/**/
+	createTrackbar("H_MIN", trackbarWindowName, &H_MIN, H_MAX, on_trackbar);
+	createTrackbar("H_MAX", trackbarWindowName, &H_MAX, H_MAX, on_trackbar);
+	createTrackbar("S_MIN", trackbarWindowName, &S_MIN, S_MAX, on_trackbar);
+	createTrackbar("S_MAX", trackbarWindowName, &S_MAX, S_MAX, on_trackbar);
+	createTrackbar("V_MIN", trackbarWindowName, &V_MIN, V_MAX, on_trackbar);
+	createTrackbar("V_MAX", trackbarWindowName, &V_MAX, V_MAX, on_trackbar);
+	/*
+	// tentativa de atribuir valores por defeito nas trackbars:
+	createTrackbar( "H_MIN", trackbarWindowName, &H_MIN_DEFAULT, H_MAX, on_trackbar );
+	createTrackbar( "H_MAX", trackbarWindowName, &H_MAX_DEFAULT, H_MAX, on_trackbar );
+	createTrackbar( "S_MIN", trackbarWindowName, &S_MIN_DEFAULT, S_MAX, on_trackbar );
+	createTrackbar( "S_MAX", trackbarWindowName, &S_MAX_DEFAULT, S_MAX, on_trackbar );
+	createTrackbar( "V_MIN", trackbarWindowName, &V_MIN_DEFAULT, V_MAX, on_trackbar );
+	createTrackbar( "V_MAX", trackbarWindowName, &V_MAX_DEFAULT, V_MAX, on_trackbar );
+	*/
+}
+
+void drawObject(vector<Object> theObjects,Mat &frame){
+
+	for(int i =0; i<theObjects.size(); i++){
+
+	cv::circle(frame,cv::Point(theObjects.at(i).getXPos(),theObjects.at(i).getYPos()),10,cv::Scalar(0,0,255));
+	cv::putText(frame,intToString(theObjects.at(i).getXPos())+ " , " + intToString(theObjects.at(i).getYPos()),cv::Point(theObjects.at(i).getXPos(),theObjects.at(i).getYPos()+20),1,1,Scalar(0,255,0));
+	cv::putText(frame,theObjects.at(i).getType(),cv::Point(theObjects.at(i).getXPos(),theObjects.at(i).getYPos()-30),1,2,theObjects.at(i).getColor());
+	}
+}
+
+void morphOps(Mat &thresh){
+
+	//create structuring element that will be used to "dilate" and "erode" image.
+	//the element chosen here is a 3px by 3px rectangle
+	Mat erodeElement = getStructuringElement( MORPH_RECT,Size(3,3));
+	//dilate with larger element so make sure object is nicely visible
+	Mat dilateElement = getStructuringElement( MORPH_RECT,Size(8,8));
+
+	erode(thresh,thresh,erodeElement);
+	erode(thresh,thresh,erodeElement);
+
+	dilate(thresh,thresh,dilateElement);
+	dilate(thresh,thresh,dilateElement);
+}
+void trackFilteredObject(Mat threshold,Mat HSV, Mat &cameraFeed)
+{
+	vector <Object> detectedObjects;
+	Mat temp;
+	threshold.copyTo(temp);
+	//these two vectors needed for output of findContours
+	vector< vector<Point> > contours;
+	vector<Vec4i> hierarchy;
+	//find contours of filtered image using openCV findContours function
+	findContours(temp,contours,hierarchy,CV_RETR_CCOMP,CV_CHAIN_APPROX_SIMPLE );
+	//use moments method to find our filtered object
+	double refArea = 0;
+	bool objectFound = false;
+	if (hierarchy.size() > 0) {
+		int numObjects = hierarchy.size();
+		//if number of objects greater than MAX_NUM_OBJECTS we have a noisy filter
+		if(numObjects<MAX_NUM_OBJECTS)
+		{
+			for (int index = 0; index >= 0; index = hierarchy[index][0])
+			{
+				Moments moment = moments((cv::Mat)contours[index]);
+				double area = moment.m00;
+				//if the area is less than 20 px by 20px then it is probably just noise
+				//if the area is the same as the 3/2 of the image size, probably just a bad filter
+				//we only want the object with the largest area so we safe a reference area each
+				//iteration and compare it to the area in the next iteration.
+				if(area>MIN_OBJECT_AREA)
+				{
+					Object object;
+
+					object.setXPos(moment.m10/area);
+					object.setYPos(moment.m01/area);
+
+					detectedObjects.push_back(object);
+
+					objectFound = true;
+
+				}
+				else objectFound = false;
+			}
+			//let user know you found an object
+			if(objectFound ==true)
+			{
+				//draw object location on screen
+				drawObject(detectedObjects,cameraFeed);
+			}
+			if (detectedObjects.size() == 2)
+			{
+				// cout << "\n\ntwo detected objects!\n\n";
+				currentlyTrackingRobot = true;
+				robotPosition1.x = detectedObjects[0].getXPos();
+				robotPosition1.y = detectedObjects[0].getYPos();
+				robotPosition2.x = detectedObjects[1].getXPos();
+				robotPosition2.y = detectedObjects[1].getYPos();
+				robotCenter.x = (robotPosition1.x + robotPosition2.x) / 2.0f;
+				robotCenter.y = (robotPosition1.y + robotPosition2.y) / 2.0f;
+				// cout << "robot pos 1 - x = " << robotPosition1.x << ", y = " << robotPosition1.y << "\n";
+				// cout << "robot pos 2 - x = " << robotPosition2.x << ", y = " << robotPosition2.y << "\n";
+				cout << "\n\nrobot center - x = " << robotPosition2.x << ", y = " << robotPosition2.y << "\n";
+
+
+				float angle1 = atan((robotPosition2.y - robotPosition1.y) / (robotPosition2.x - robotPosition1.y)) * 180/PI;
+				float angle2 = atan((robotPosition1.y - robotPosition1.y) / (robotPosition2.x - robotPosition2.y)) * 180 / PI;
+				float nextAngle = -1;
+
+				// convert to angle with horizontal
+				// angle1 -= 90;
+				// angle2 -= 90;
+
+				// cout << "angle 1 = " << angle1 << endl;
+				// cout << "angle 2 = " << angle1 << endl;
+
+				if (!courseIsCompleted) {
+					nextCheckpoint.x = course[nextCheckpointIndex].x;
+					nextCheckpoint.y = course[nextCheckpointIndex].y;
+					cout << "nextCheckpoint x = " << nextCheckpoint.x << ", y = " << nextCheckpoint.y << "\n";
+					nextAngle = atan((nextCheckpoint.y - robotCenter.y) / (nextCheckpoint.x - robotCenter.y)) * 180 / PI;
+					// convert to angle with horizontal
+					// nextAngle -= 90;
+
+					// cout << "nextAngle = " << nextAngle << endl;
+					float distanceToCheckpoint = distance(robotCenter, nextCheckpoint);
+					float angleDifference = nextAngle - angle1;
+					cout << "angle difference = " << angleDifference << endl;
+
+					if (distanceToCheckpoint < XY_DIFFERENCE_TOLERANCE)
+						cout << "REACHED_CHECKPOINT" << endl << "STOP" << endl;
+					else
+						if (abs(angleDifference) < ANGLE_DIFFERENCE_TOLERANCE)
+							cout << "GO_FORWARD";
+						else if (angleDifference > 0)
+							cout << "ROTATE_RIGHT";
+						else
+							cout << "ROTATE_LEFT";
+						
+					
+					// check to see if robot within tolerance range for next spot
+					if ((abs(robotCenter.x - nextCheckpoint.x) < XY_DIFFERENCE_TOLERANCE)
+						&& (abs(robotCenter.y - nextCheckpoint.y) < XY_DIFFERENCE_TOLERANCE)) {
+						
+						courseCheckpoints[nextCheckpointIndex] = true; // validates reached checkpoint
+						cout << " --- Hit checkpoint i = " << nextCheckpointIndex << endl;
+						if (nextCheckpointIndex == course.size() - 1)
+							courseIsCompleted = true; // course is complete once all the course's checkpoints are ran
+						nextCheckpointIndex++;
+						nextCheckpoint = course[nextCheckpointIndex];
+					}
+				}
+			}
+			else
+				currentlyTrackingRobot = false;
+		}
+		else putText(cameraFeed,"TOO MUCH NOISE! ADJUST FILTER",Point(0,50),1,2,Scalar(0,0,255),2);
+	}
+}
 
 
 int main(int argc, char* argv[])
@@ -355,8 +420,8 @@ int main(int argc, char* argv[])
 					// Set the callback function for any mouse event
 					cv::setMouseCallback("REGION OF INTEREST", selectCourse, 0);
 					cv::waitKey(0);
-
 					courseSet = true;
+					cv::setMouseCallback("REGION OF INTEREST", NULL, NULL);
 				}
 
 				// Warp source image to destination
@@ -386,13 +451,13 @@ int main(int argc, char* argv[])
 
 				// desenha os 4 cantos do percurso de desenho
 				// (azul ainda não atingidos; verde já atingidos)
-				if (course.size() != courseCompleted.size())
+				if (course.size() != courseCheckpoints.size())
 				{
 					cerr << "error, different sized vectors" << endl;
 					return -1;
 				}
 				for (int i = 0; i < course.size(); i++)
-					if (courseCompleted[i] == true)
+					if (courseCheckpoints[i] == true)
 						circle(roi, cv::Point(course[i].x, course[i].y), 3, GREEN, 5, CV_AA);
 					else
 						circle(roi, cv::Point(course[i].x, course[i].y), 3, BLUE, 5, CV_AA);
